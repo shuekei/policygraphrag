@@ -224,7 +224,7 @@ QUESTION:
 """
 
     payload = {
-        "model": "llama3-chatqa:70b",
+        "model": "qwen3:30b",
         "prompt": prompt,
         "stream": True
     }
@@ -446,5 +446,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
