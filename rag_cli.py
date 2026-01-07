@@ -31,8 +31,12 @@ tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-Embedding-0.6B")
 model = AutoModel.from_pretrained("Qwen/Qwen3-Embedding-0.6B").to(device)
 
 def get_embedding(text: str):
+
     inputs = tokenizer(
-        text, return_tensors="pt", truncation=True, max_length=8192
+        text,
+        return_tensors="pt",
+        truncation=True,
+        max_length=8192
     ).to(device)
 
     with torch.no_grad():
@@ -40,6 +44,9 @@ def get_embedding(text: str):
 
     if hasattr(out, "embeddings") and out.embeddings is not None:
         return out.embeddings.squeeze(0).cpu().numpy().tolist()
+
+    if hasattr(out, "pooler_output") and out.pooler_output is not None:
+        return out.pooler_output.squeeze(0).cpu().numpy().tolist()
 
     hidden = out.last_hidden_state
     emb = hidden.mean(dim=1)
