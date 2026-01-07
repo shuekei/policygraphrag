@@ -277,56 +277,76 @@ QUESTION:
 # ============================================================
 
 QUESTIONS = [
-    "What is the purpose of this policy document?",
-    "What is the applicability of this policy?",
-    "Who does this policy apply to?",
-    "What are the key objectives of this policy?",
-    "When does this policy come into effect?",
-    "What are the main regulatory requirements?",
-    "What institutions are covered under this policy?",
-    "What are the responsibilities of the board of directors?",
-    "What are the responsibilities of senior management?",
-    "What governance requirements are specified?",
-    "What risk management practices are required?",
-    "What reporting obligations are stated?",
-    "What documentation must be maintained?",
-    "What internal controls are required?",
-    "What compliance requirements are mentioned?",
-    "What are the penalties for non-compliance?",
-    "What disclosure requirements are specified?",
-    "What approval processes are required?",
-    "What operational requirements are outlined?",
-    "What record-keeping obligations are stated?",
-    "What are the audit requirements?",
-    "What outsourcing requirements are included?",
-    "What technology risk requirements are mentioned?",
-    "What data protection requirements are specified?",
-    "What business continuity requirements are stated?",
-    "What consumer protection principles are included?",
-    "What product governance requirements are described?",
-    "What are the requirements for customer due diligence?",
-    "What ongoing monitoring obligations are stated?",
-    "What escalation procedures are required?",
-    "What internal policies must be established?",
-    "What training requirements are mentioned?",
-    "What review and update obligations are stated?",
-    "What risk assessment processes are required?",
-    "What oversight mechanisms are described?",
-    "What control functions are required?",
-    "What responsibilities are assigned to compliance functions?",
-    "What requirements apply to outsourcing arrangements?",
-    "What requirements relate to third-party service providers?",
-    "What obligations apply to data management?",
-    "What security controls are required?",
-    "What requirements relate to incident management?",
-    "What requirements apply to business continuity planning?",
-    "What monitoring mechanisms are described?",
-    "What supervisory expectations are outlined?",
-    "What corrective actions are required in case of breach?",
-    "What enforcement measures are mentioned?",
-    "What review timelines are specified?",
-    "What reporting lines are required?",
-    "What overall regulatory expectations are stated?"
+    # Capital & Liquidity
+    "What is the minimum Leverage Ratio that banking institutions must maintain at all times?",
+    "What is the objective of the Liquidity Coverage Ratio (LCR)?",
+    "What is the cap on inflows that can offset outflows in the LCR calculation?",
+    "What is the minimum Net Stable Funding Ratio (NSFR) requirement?",
+    "What must a financial institution do if its NSFR falls below the 100% threshold?",
+    "What is the standard rate for the Capital Conservation Buffer (CCB)?",
+    "What is the minimum capital planning horizon for stress test reporting by banking institutions?",
+
+    # Investments, Equity & Market Risk
+    "What is the aggregate limit for a financial institution's non-financial investments?",
+    "What defines 'material interest' in a corporation according to the equity investment guidelines?",
+    "What is the maximum interest in shares a DFI member can have in a corporation before they are prohibited from receiving financing?",
+    "What is the Look-through Approach (LTA) for equity investments in funds?",
+    "What is the maximum short position an Eligible Market Participant can hold in a single security issue?",
+    "How does the Bank define a Qualifying Central Counterparty (QCCP)?",
+    "Which entities are considered core market participants for 0% risk weight exemptions in repo-style transactions?",
+
+    # Operational Risk & Reporting
+    "What are the components of the Business Indicator (BI) used to calculate operational risk capital?",
+    "What are the three buckets of the Business Indicator used for operational risk coefficients?",
+    "Who is responsible for ensuring the accuracy of regulatory reports submitted to the Bank?",
+    "What is the reporting threshold for a customer information breach to be considered significant scale?",
+    "How often must financial service providers conduct an independent review of their customer information protection policies?",
+    "What must an FSP designate to oversee the implementation of customer information protection policies?",
+
+    # Money Services Business (MSB)
+    "What is the annual fee for a Money Services Business (MSB) branch office?",
+    "What is the deadline for MSB licensees to pay their annual fees each year?",
+    "What is the minimum attendance requirement for directors of medium and large MSBs?",
+
+    # Insurance & Takaful
+    "How quickly must an insurer pay out a motor death claim?",
+    "What is the minimum free look period for a family takaful product?",
+    "What is the required turnaround time for a CITO to respond to a referral for a TPPD claim?",
+    "What is the scale of betterment in motor claims?",
+    "What is the maximum rate of betterment for a vehicle aged 10 years and above?",
+
+    # Islamic Finance & Shariah
+    "How are losses distributed in a Mudarabah contract?",
+    "How is profit defined in a Mudarabah contract?",
+    "What defines a Musyarakah Mutanaqisah contract?",
+    "What is the repayment requirement for a borrower under a Qard contract?",
+    "Under what conditions is an Istisna contract considered completed?",
+    "What is the definition of constructive possession in an Istisna contract?",
+    "What is the reporting timeline for a Shariah Non-Compliance (SNC) event confirmation?",
+
+    # Sukuk & Project Finance
+    "What is the difference between asset-based and asset-backed Sukuk?",
+    "What are the eligibility criteria for high-quality project finance exposures during the operational phase?",
+
+    # Climate Risk & Sustainability
+    "What are the three drivers of climate-related risks?",
+    "What are the three scopes of Greenhouse Gas (GHG) emissions?",
+    "What are the Stretch recommendations for TCFD climate disclosures?",
+
+    # IT, Security & Systems
+    "What security infrastructure provides data authenticity and non-repudiation for RENTAS transactions?",
+    "Which architectural style is recommended for financial institutions publishing Open Data APIs?",
+    "What is the primary purpose of the ORION system?",
+    "How quickly must a robbery involving more than RM200,000 be reported in the ORION system?",
+    "How long must records of transaction communication for wholesale dealings be retained?",
+
+    # Governance & Licensing
+    "What is the cooling-off period for an external auditor before resuming the role of engagement partner for a DFI?",
+    "What constitutes a non-complex case for the release of a property's original title?",
+    "What determines the best interest of Malaysia in a new license application?",
+
+    # Consumer Protection
+    "What are the five key principles of the Perlindungan Tenang initiative?"
 ]
 
 
@@ -426,4 +446,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
