@@ -224,7 +224,7 @@ QUESTION:
 """
 
     payload = {
-        "model": "qwen3:30b",
+        "model": "gpt-oss:20b",
         "prompt": prompt,
         "stream": True
     }
@@ -446,6 +446,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
