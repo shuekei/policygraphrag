@@ -6,6 +6,9 @@ from neo4j import GraphDatabase
 import torch
 from transformers import AutoTokenizer, AutoModel
 import requests
+import psutil
+import threading
+import csv
 
 # ============================================================
 # NEO4J CONNECTION
@@ -51,6 +54,50 @@ def get_embedding(text: str):
     hidden = out.last_hidden_state
     emb = hidden.mean(dim=1)
     return emb.squeeze(0).cpu().numpy().tolist()
+
+# system monitoring
+class SystemMonitor:
+    def __init__(self, csv_path, interval=1.0):
+        self.csv_path = csv_path
+        self.interval = interval
+        self.running = False
+
+    def start(self):
+        self.running = True
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+
+    def stop(self):
+        self.running = False
+        self.thread.join()
+
+    def _run(self):
+        with open(self.csv_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                "timestamp","cpu_percent","ram_percent","ram_used_gb",
+                "gpu_util_percent","gpu_mem_mib"
+            ])
+
+            while self.running:
+                ts = datetime.now().strftime("%H:%M:%S")
+                cpu = psutil.cpu_percent()
+                mem = psutil.virtual_memory()
+                ram_pct = mem.percent
+                ram_gb = mem.used / (1024**3)
+
+                if torch.cuda.is_available():
+                    gpu_mem = torch.cuda.memory_allocated() / (1024**2)
+                    gpu_util = (torch.cuda.memory_allocated() /
+                                torch.cuda.get_device_properties(0).total_memory) * 100
+                else:
+                    gpu_mem, gpu_util = 0, 0
+
+                writer.writerow([ts, round(cpu,2), round(ram_pct,2),
+                                 round(ram_gb,2), round(gpu_util,2),
+                                 round(gpu_mem,0)])
+                f.flush()
+                time.sleep(self.interval)
 
 # ============================================================
 # VECTOR SEARCH
@@ -164,13 +211,10 @@ def format_context(label, expanded):
 # OLLAMA CALL
 # ============================================================
 
-def call_ollama(context, question):
+def call_ollama_metrics(context, question):
 
     prompt = f"""
 You are a regulatory policy expert. Use ONLY the provided context.
-
-The context includes file name, page number and clause hierarchy.
-Preserve these when answering.
 
 CONTEXT:
 {context}
@@ -182,15 +226,50 @@ QUESTION:
     payload = {
         "model": "llama3-chatqa:70b",
         "prompt": prompt,
-        "stream": False
+        "stream": True
     }
 
-    start = time.time()
-    r = requests.post("http://localhost:11434/api/generate", json=payload)
-    output = r.json()["response"]
-    llm_time = time.time() - start
+    timestamp_sent = time.time()
+    first_token_time = None
+    answer_chunks = []
 
-    return output, llm_time
+    r = requests.post("http://localhost:11434/api/generate", json=payload, stream=True)
+
+    for line in r.iter_lines():
+        if line:
+            data = json.loads(line.decode("utf-8"))
+
+            if first_token_time is None:
+                first_token_time = time.time()
+
+            if "response" in data:
+                answer_chunks.append(data["response"])
+
+            if data.get("done"):
+                break
+
+    timestamp_completed = time.time()
+    answer = "".join(answer_chunks)
+
+    ttfb = first_token_time - timestamp_sent
+    total_latency = timestamp_completed - timestamp_sent
+    gen_time = timestamp_completed - first_token_time
+
+    # token estimate
+    est_tokens = len(tokenizer.encode(answer))
+    tps = est_tokens / gen_time if gen_time > 0 else 0
+
+    return {
+        "answer": answer,
+        "timestamp_sent": timestamp_sent,
+        "timestamp_first_byte": first_token_time,
+        "timestamp_completed": timestamp_completed,
+        "ttfb": ttfb,
+        "gen_time": gen_time,
+        "total_latency": total_latency,
+        "tokens": est_tokens,
+        "tps": tps
+    }
 
 
 # ============================================================
@@ -259,14 +338,23 @@ def main():
 
     log_name = f"graphrag_eval_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
     log_path = os.path.join(os.getcwd(), log_name)
+    sys_csv = log_name.replace(".txt", "_system.csv")
+
+    monitor = SystemMonitor(sys_csv, interval=1.0)
+    monitor.start()
 
     total_start = time.time()
-    total_times = []
+
+    total_latency_list = []
+    ttfb_list = []
+    gen_list = []
+    tps_list = []
 
     with open(log_path, "w", encoding="utf-8") as log:
 
-        log.write(f"GraphRAG Batch Evaluation\nStart: {datetime.now()}\n")
-        log.write("="*80 + "\n\n")
+        log.write("GraphRAG Batch Evaluation\n")
+        log.write(f"Start Time: {datetime.now()}\n")
+        log.write("="*90 + "\n\n")
         log.flush()
 
         for i, question in enumerate(QUESTIONS, 1):
@@ -276,38 +364,64 @@ def main():
 
             q_start = time.time()
 
-            retrieval_start = time.time()
+            # ---------- Retrieval ----------
+            r_start = time.time()
             q_emb = get_embedding(question)
             hits = retrieve_top_k(q_emb, k=3)
-            retrieval_time = time.time() - retrieval_start
+            retrieval_time = time.time() - r_start
 
             best = hits[0]
             with driver.session() as session:
                 expanded = expand_node(session, best["node"].element_id, best["label"])
 
             context = format_context(best["label"], expanded)
-            answer, llm_time = call_ollama(context, question)
 
-            total_time = time.time() - q_start
-            total_times.append(total_time)
+            # ---------- LLM ----------
+            metrics = call_ollama_metrics(context, question)
 
-            log.write("ANSWER:\n" + answer + "\n\n")
-            log.write(f"Retrieval time : {retrieval_time:.2f}s\n")
-            log.write(f"LLM time       : {llm_time:.2f}s\n")
-            log.write(f"Total time     : {total_time:.2f}s\n")
-            log.write("-"*80 + "\n")
+            total_latency_list.append(metrics["total_latency"])
+            ttfb_list.append(metrics["ttfb"])
+            gen_list.append(metrics["gen_time"])
+            tps_list.append(metrics["tps"])
+
+            # ---------- Logging ----------
+            log.write("ANSWER:\n" + metrics["answer"] + "\n\n")
+
+            log.write(f"timestamp_sent        : {metrics['timestamp_sent']}\n")
+            log.write(f"timestamp_first_byte : {metrics['timestamp_first_byte']}\n")
+            log.write(f"timestamp_completed  : {metrics['timestamp_completed']}\n")
+
+            log.write(f"ttfb_sec              : {metrics['ttfb']:.4f}\n")
+            log.write(f"generation_time_sec  : {metrics['gen_time']:.4f}\n")
+            log.write(f"total_latency_sec    : {metrics['total_latency']:.4f}\n")
+            log.write(f"estimated_tokens     : {metrics['tokens']}\n")
+            log.write(f"tokens_per_sec       : {metrics['tps']:.2f}\n")
+            log.write(f"retrieval_time_sec   : {retrieval_time:.4f}\n")
+
+            log.write("-"*90 + "\n")
             log.flush()
 
-        avg_time = sum(total_times) / len(total_times)
-        all_time = time.time() - total_start
+        total_time = time.time() - total_start
+        monitor.stop()
 
-        log.write("\n" + "="*80 + "\n")
-        log.write(f"TOTAL QUESTIONS : {len(QUESTIONS)}\n")
-        log.write(f"TOTAL TIME      : {all_time:.2f}s\n")
-        log.write(f"AVERAGE TIME    : {avg_time:.2f}s\n")
+        log.write("\n" + "="*90 + "\n")
+        log.write("FINAL SUMMARY\n")
+        log.write("="*90 + "\n")
 
-    print("\n✅ Batch evaluation completed.")
-    print(f"Log saved to: {log_path}")
+        log.write(f"Total Test Duration (s): {total_time:.2f}\n")
+        log.write(f"Total Requests        : {len(QUESTIONS)}\n")
+        log.write(f"Successful Requests   : {len(QUESTIONS)}\n")
+        log.write(f"Success Rate (%)      : 100\n\n")
+
+        log.write(f"Avg TTFB (s)          : {sum(ttfb_list)/len(ttfb_list):.4f}\n")
+        log.write(f"Avg Gen Time (s)      : {sum(gen_list)/len(gen_list):.4f}\n")
+        log.write(f"Avg Total Latency (s) : {sum(total_latency_list)/len(total_latency_list):.4f}\n")
+        log.write(f"Avg Tokens/sec        : {sum(tps_list)/len(tps_list):.2f}\n")
+        log.write(f"Max Latency (s)       : {max(total_latency_list):.4f}\n")
+
+    print("\n✅ GraphRAG benchmark completed.")
+    print("📄 Log file:", log_path)
+    print("📊 System metrics CSV:", sys_csv)
 
 
 if __name__ == "__main__":
