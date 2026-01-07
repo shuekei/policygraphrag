@@ -4,6 +4,9 @@ import re
 import time
 from datetime import datetime
 from docling.document_converter import DocumentConverter
+import psutil
+import threading
+import torch
 
 # ============================================================
 # PATH SETUP (portable)
@@ -23,6 +26,56 @@ LOG_PATH = os.path.join(
     LOG_DIR, f"parsing_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
 )
 
+# ============================================================
+# SYSTEM MONITOR
+# ============================================================
+
+class SystemMonitor:
+    def __init__(self, interval=1.0):
+        self.interval = interval
+        self.cpu = []
+        self.ram = []
+        self.gpu = []
+        self._running = False
+
+    def start(self):
+        self._running = True
+        t = threading.Thread(target=self._run, daemon=True)
+        t.start()
+
+    def stop(self):
+        self._running = False
+
+    def _run(self):
+        while self._running:
+            # CPU %
+            self.cpu.append(psutil.cpu_percent(interval=None))
+
+            # RAM %
+            self.ram.append(psutil.virtual_memory().percent)
+
+            # GPU %
+            if torch.cuda.is_available():
+                try:
+                    used = torch.cuda.memory_allocated()
+                    total = torch.cuda.get_device_properties(0).total_memory
+                    self.gpu.append((used / total) * 100)
+                except:
+                    self.gpu.append(0)
+            else:
+                self.gpu.append(0)
+
+            time.sleep(self.interval)
+
+    def summary(self):
+        return {
+            "avg_cpu": sum(self.cpu)/len(self.cpu) if self.cpu else 0,
+            "max_cpu": max(self.cpu) if self.cpu else 0,
+            "avg_ram": sum(self.ram)/len(self.ram) if self.ram else 0,
+            "max_ram": max(self.ram) if self.ram else 0,
+            "avg_gpu": sum(self.gpu)/len(self.gpu) if self.gpu else 0,
+            "max_gpu": max(self.gpu) if self.gpu else 0,
+        }
 # ============================================================
 # HELPERS
 # ============================================================
@@ -173,59 +226,98 @@ def main():
 
     print(f"Found {len(pdf_files)} PDFs")
 
+    total_requests = len(pdf_files)
+    success_requests = 0
+    latencies = []
+
+    print("\n📊 Starting system monitoring...")
+    monitor = SystemMonitor(interval=1.0)
+    monitor.start()
+
     total_start = time.time()
-    file_times = []
 
     with open(LOG_PATH, "w", encoding="utf-8") as log:
+
         log.write(f"Parsing log started at {datetime.now()}\n")
-        log.write("="*60 + "\n\n")
+        log.write("="*80 + "\n\n")
         log.flush()
 
         for idx, pdf_name in enumerate(pdf_files, 1):
             print(f"\n[{idx}/{len(pdf_files)}] Processing: {pdf_name}")
-
             file_start = time.time()
-            pdf_path = os.path.join(DATA_DIR, pdf_name)
-            base = os.path.splitext(pdf_name)[0]
 
-            # ---- Convert ----
-            result = converter.convert(pdf_path)
-            doc = result.document
-            raw_dict = doc.model_dump()
+            try:
+                pdf_path = os.path.join(DATA_DIR, pdf_name)
+                base = os.path.splitext(pdf_name)[0]
 
-            raw_path = os.path.join(RAW_DIR, base + "_raw.json")
-            with open(raw_path, "w", encoding="utf-8") as f:
-                json.dump(raw_dict, f, ensure_ascii=False, indent=2)
+                # ---- Convert ----
+                result = converter.convert(pdf_path)
+                doc = result.document
+                raw_dict = doc.model_dump()
 
-            # ---- Parse ----
-            structured_doc = parse_docling_json(raw_dict)
+                raw_path = os.path.join(RAW_DIR, base + "_raw.json")
+                with open(raw_path, "w", encoding="utf-8") as f:
+                    json.dump(raw_dict, f, ensure_ascii=False, indent=2)
 
-            clean_path = os.path.join(CLEAN_DIR, base + "_cleaned.json")
-            with open(clean_path, "w", encoding="utf-8") as f:
-                json.dump(structured_doc, f, ensure_ascii=False, indent=2)
+                # ---- Parse ----
+                structured_doc = parse_docling_json(raw_dict)
 
+                clean_path = os.path.join(CLEAN_DIR, base + "_cleaned.json")
+                with open(clean_path, "w", encoding="utf-8") as f:
+                    json.dump(structured_doc, f, ensure_ascii=False, indent=2)
+
+                success_requests += 1
+
+            except Exception as e:
+                print("❌ Failed:", pdf_name, str(e))
+                log.write(f"{pdf_name} -> FAILED: {e}\n")
+                log.flush()
+                continue
+
+            # ---- Per-file timing ----
             file_time = time.time() - file_start
-            file_times.append(file_time)
+            latencies.append(file_time)
 
             msg = f"{pdf_name} -> {file_time:.2f} seconds"
             print("   ", msg)
-
-            # ✅ write immediately
             log.write(msg + "\n")
             log.flush()
 
-        total_time = time.time() - total_start
-        avg_time = sum(file_times) / len(file_times)
+        # -----------------------------
+        # STOP MONITOR + FINAL SUMMARY
+        # -----------------------------
+        monitor.stop()
+        sys_stats = monitor.summary()
 
-        log.write("\n" + "="*60 + "\n")
-        log.write(f"Total files   : {len(file_times)}\n")
-        log.write(f"Total time    : {total_time:.2f} seconds\n")
-        log.write(f"Average time  : {avg_time:.2f} seconds per file\n")
+        total_time = time.time() - total_start
+        avg_latency = sum(latencies) / len(latencies)
+        max_latency = max(latencies)
+        success_rate = (success_requests / total_requests) * 100
+
+        log.write("\n" + "="*80 + "\n")
+        log.write("SYSTEM PERFORMANCE SUMMARY\n")
+        log.write("="*80 + "\n")
+
+        log.write(f"Total Test Duration (s) : {total_time:.2f}\n")
+        log.write(f"Total Requests         : {total_requests}\n")
+        log.write(f"Successful Requests    : {success_requests}\n")
+        log.write(f"Success Rate (%)       : {success_rate:.2f}\n\n")
+
+        log.write(f"Avg Latency (s)        : {avg_latency:.2f}\n")
+        log.write(f"Max Latency (s)        : {max_latency:.2f}\n\n")
+
+        log.write(f"Avg CPU (%)            : {sys_stats['avg_cpu']:.2f}\n")
+        log.write(f"Max CPU (%)            : {sys_stats['max_cpu']:.2f}\n")
+        log.write(f"Avg RAM (%)            : {sys_stats['avg_ram']:.2f}\n")
+        log.write(f"Max RAM (%)            : {sys_stats['max_ram']:.2f}\n")
+        log.write(f"Avg GPU (%)            : {sys_stats['avg_gpu']:.2f}\n")
+        log.write(f"Max GPU (%)            : {sys_stats['max_gpu']:.2f}\n")
+
         log.flush()
 
     print("\n✅ All files processed.")
     print(f"⏱ Total time   : {total_time:.2f} seconds")
-    print(f"📊 Average time: {avg_time:.2f} seconds/file")
+    print(f"📊 Avg latency : {avg_latency:.2f} seconds/file")
     print(f"📝 Log saved to: {LOG_PATH}")
 
 
