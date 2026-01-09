@@ -33,7 +33,7 @@ print("✅ Neo4j connected.")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
-print("🤖 LLM model       :", "gpt-oss:120b")
+print("🤖 LLM model       :", "qwen3:4b")
 
 tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-Embedding-0.6B")
 model = AutoModel.from_pretrained("Qwen/Qwen3-Embedding-0.6B").to(device)
@@ -271,7 +271,7 @@ QUESTION:
 """
 
     payload = {
-        "model": "gpt-oss:120b",
+        "model": "qwen3:4b",
         "prompt": prompt,
         "stream": True
     }
@@ -493,6 +493,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
