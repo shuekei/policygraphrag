@@ -33,7 +33,7 @@ print("✅ Neo4j connected.")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
-print("🤖 LLM model       :", "qwen3: 4b")
+print("🤖 LLM model       :", "qwen2.5:7b")
 
 tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-Embedding-0.6B")
 model = AutoModel.from_pretrained("Qwen/Qwen3-Embedding-0.6B").to(device)
@@ -93,18 +93,40 @@ class SystemMonitor:
                 ram_gb = mem.used / (1024**3)
 
                 if torch.cuda.is_available():
-                    handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-
-                    util = pynvml.nvmlDeviceGetUtilizationRates(handle)
-                    meminfo = pynvml.nvmlDeviceGetMemoryInfo(handle)
-                    temp = pynvml.nvmlDeviceGetTemperature(
-                        handle, pynvml.NVML_TEMPERATURE_GPU
-                    )
-                    power = pynvml.nvmlDeviceGetPowerUsage(handle) / 1000  # mW → W
-
-                    gpu_util = util.gpu                 # REAL GPU core utilization (%)
-                    gpu_mem_util = util.memory          # REAL memory controller util (%)
-                    gpu_mem = meminfo.used / (1024**2)  # MB used (whole GPU)
+                    try:
+                        handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+                
+                        # ---- GPU core util ----
+                        try:
+                            util = pynvml.nvmlDeviceGetUtilizationRates(handle)
+                            gpu_util = util.gpu
+                            gpu_mem_util = util.memory
+                        except pynvml.NVMLError:
+                            gpu_util, gpu_mem_util = -1, -1
+                
+                        # ---- GPU memory used ----
+                        try:
+                            meminfo = pynvml.nvmlDeviceGetMemoryInfo(handle)
+                            gpu_mem = meminfo.used / (1024**2)
+                        except pynvml.NVMLError:
+                            gpu_mem = -1
+                
+                        # ---- Temperature ----
+                        try:
+                            temp = pynvml.nvmlDeviceGetTemperature(
+                                handle, pynvml.NVML_TEMPERATURE_GPU
+                            )
+                        except pynvml.NVMLError:
+                            temp = -1
+                
+                        # ---- Power ----
+                        try:
+                            power = pynvml.nvmlDeviceGetPowerUsage(handle) / 1000
+                        except pynvml.NVMLError:
+                            power = -1
+                
+                    except pynvml.NVMLError:
+                        gpu_util, gpu_mem_util, gpu_mem, temp, power = -1, -1, -1, -1, -1
                 else:
                     gpu_util, gpu_mem_util, gpu_mem, temp, power = 0, 0, 0, 0, 0
 
@@ -249,7 +271,7 @@ QUESTION:
 """
 
     payload = {
-        "model": "qwen3:4b",
+        "model": "qwen2.5:7b",
         "prompt": prompt,
         "stream": True
     }
@@ -471,6 +493,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
