@@ -9,7 +9,10 @@ import requests
 import psutil
 import threading
 import csv
+import pynvml
 
+if torch.cuda.is_available():
+    pynvml.nvmlInit()
 # ============================================================
 # NEO4J CONNECTION
 # ============================================================
@@ -30,7 +33,7 @@ print("✅ Neo4j connected.")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
-print("🤖 LLM model       :", "qwen2.5:7b")
+print("🤖 LLM model       :", "qwen3: 4b")
 
 tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-Embedding-0.6B")
 model = AutoModel.from_pretrained("Qwen/Qwen3-Embedding-0.6B").to(device)
@@ -78,7 +81,8 @@ class SystemMonitor:
             writer = csv.writer(f)
             writer.writerow([
                 "timestamp","cpu_percent","ram_percent","ram_used_gb",
-                "gpu_util_percent","gpu_mem_mib"
+                "gpu_util_percent","gpu_mem_util_percent",
+                "gpu_mem_mib","gpu_temp_c","gpu_power_w"
             ])
 
             while self.running:
@@ -89,15 +93,34 @@ class SystemMonitor:
                 ram_gb = mem.used / (1024**3)
 
                 if torch.cuda.is_available():
-                    gpu_mem = torch.cuda.memory_allocated() / (1024**2)
-                    gpu_util = (torch.cuda.memory_allocated() /
-                                torch.cuda.get_device_properties(0).total_memory) * 100
-                else:
-                    gpu_mem, gpu_util = 0, 0
+                    handle = pynvml.nvmlDeviceGetHandleByIndex(0)
 
-                writer.writerow([ts, round(cpu,2), round(ram_pct,2),
-                                 round(ram_gb,2), round(gpu_util,2),
-                                 round(gpu_mem,0)])
+                    util = pynvml.nvmlDeviceGetUtilizationRates(handle)
+                    meminfo = pynvml.nvmlDeviceGetMemoryInfo(handle)
+                    temp = pynvml.nvmlDeviceGetTemperature(
+                        handle, pynvml.NVML_TEMPERATURE_GPU
+                    )
+                    power = pynvml.nvmlDeviceGetPowerUsage(handle) / 1000  # mW → W
+
+                    gpu_util = util.gpu                 # REAL GPU core utilization (%)
+                    gpu_mem_util = util.memory          # REAL memory controller util (%)
+                    gpu_mem = meminfo.used / (1024**2)  # MB used (whole GPU)
+                else:
+                    gpu_util, gpu_mem_util, gpu_mem, temp, power = 0, 0, 0, 0, 0
+
+
+                writer.writerow([
+                    ts,
+                    round(cpu,2),
+                    round(ram_pct,2),
+                    round(ram_gb,2),
+                    round(gpu_util,2),
+                    round(gpu_mem_util,2),
+                    round(gpu_mem,0),
+                    temp,
+                    round(power,2)
+                ])
+
                 f.flush()
                 time.sleep(self.interval)
 
@@ -226,7 +249,7 @@ QUESTION:
 """
 
     payload = {
-        "model": "qwen2.5:7b",
+        "model": "qwen3:4b",
         "prompt": prompt,
         "stream": True
     }
